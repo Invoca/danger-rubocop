@@ -68,6 +68,7 @@ The following keys are supported:
 * `include_cop_names`: Prepends cop names to the output messages. Example: "Layout/EmptyLinesAroundBlockBody: Extra empty line detected at block body end."
 * `rubocop_cmd`: Allows you to change the rubocop executable that's invoked. This is used to support rubocop wrappers like [Standard](https://github.com/testdouble/standard/) by passing `standardrb` as the value.
 * `skip_bundle_exec`: When there is a `Gemfile` in the project, Rubocop will be executed using [Bundler](https://bundler.io). When `true`, this flag will force Rubocop to run without `bundle exec`.
+* `use_github_review`: When passed the `github.review` object, it will use the GitHub review API to submit comments instead of using the comments API.
 
 Passing `files` as only argument is also supported for backward compatibility.
 
