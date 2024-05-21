@@ -1,5 +1,8 @@
 require 'shellwords'
 
+require_relative 'danger_rubocop/reporter'
+require_relative 'danger_rubocop/github_review_reporter'
+
 module Danger
   # Run Ruby files through Rubocop.
   # Results are passed out as a table in markdown.
@@ -40,20 +43,30 @@ module Danger
       include_cop_names = config[:include_cop_names] || false
       rubocop_cmd = config[:rubocop_cmd] || 'rubocop'
       skip_bundle_exec = config[:skip_bundle_exec] || false
+      use_github_review = config[:use_github_review] || false
 
       files_to_lint = fetch_files_to_lint(files)
       files_to_report = rubocop(files_to_lint, force_exclusion, only_report_new_offenses, cmd: rubocop_cmd, config_path: config_path, skip_bundle_exec: skip_bundle_exec)
 
       return if files_to_report.empty?
-      return report_failures(files_to_report, include_cop_names: include_cop_names) if report_danger
+
+      reporter = if use_github_review
+                   ::DangerRubocop::GithubReviewReporter.new(use_github_review)
+                 else
+                   ::DangerRubocop::Reporter.new(self)
+                 end
+
+      return report_failures(files_to_report, include_cop_names: include_cop_names, reporter: reporter) if report_danger
 
       if inline_comment && group_inline_comments
-        add_grouped_violation_for_each_line(files_to_report, fail_on_inline_comment, report_severity, include_cop_names: include_cop_names)
+        add_grouped_violation_for_each_line(files_to_report, fail_on_inline_comment, report_severity, reporter: reporter, include_cop_names: include_cop_names)
       elsif inline_comment
-        add_violation_for_each_line(files_to_report, fail_on_inline_comment, report_severity, include_cop_names: include_cop_names)
+        add_violation_for_each_line(files_to_report, fail_on_inline_comment, report_severity, reporter: reporter, include_cop_names: include_cop_names)
       else
-        markdown offenses_message(files_to_report, include_cop_names: include_cop_names)
+        reporter.markdown(offenses_message(files_to_report, include_cop_names: include_cop_names))
       end
+
+      reporter.finalize
     end
 
     private
@@ -120,16 +133,16 @@ module Danger
       message + table.split("\n")[1..-2].join("\n")
     end
 
-    def report_failures(offending_files, include_cop_names: false)
+    def report_failures(offending_files, reporter:, include_cop_names: false)
       offending_files.each do |file|
         file['offenses'].each do |offense|
           offense_message = offense_message(offense, include_cop_names: include_cop_names)
-          fail "#{file['path']} | #{offense['location']['line']} | #{offense_message}"
+          reporter.fail("#{file['path']} | #{offense['location']['line']} | #{offense_message}")
         end
       end
     end
 
-    def add_violation_for_each_line(offending_files, fail_on_inline_comment, report_severity, include_cop_names: false)
+    def add_violation_for_each_line(offending_files, fail_on_inline_comment, report_severity, reporter:, include_cop_names: false)
       offending_files.flat_map do |file|
         file['offenses'].map do |offense|
           offense_message = offense_message(offense, include_cop_names: include_cop_names)
@@ -138,17 +151,17 @@ module Danger
             line: offense['location']['line']
           }
           if fail_on_inline_comment
-            fail(offense_message, **kargs)
+            reporter.fail(offense_message, **kargs)
           elsif report_severity && %w[error fatal].include?(offense['severity'])
-            fail(offense_message, **kargs)
+            reporter.fail(offense_message, **kargs)
           else
-            warn(offense_message, **kargs)
+            reporter.warn(offense_message, **kargs)
           end
         end
       end
     end
 
-    def add_grouped_violation_for_each_line(offending_files, fail_on_inline_comment, report_severity, include_cop_names: false)
+    def add_grouped_violation_for_each_line(offending_files, fail_on_inline_comment, report_severity, reporter:, include_cop_names: false)
       grouped_offense_messages = Hash.new { |h, k| h[k] = [] }
       offending_files.flat_map do |file|
         file['offenses'].map do |offense|
@@ -170,11 +183,11 @@ module Danger
           offense_messages[0]
         end
         if fail_on_inline_comment
-          fail(grouped_offense_message, **kargs)
+          reporter.fail(grouped_offense_message, **kargs)
         elsif report_severity && %w[error fatal].include?(offense['severity'])
-          fail(grouped_offense_message, **kargs)
+          reporter.fail(grouped_offense_message, **kargs)
         else
-          warn(grouped_offense_message, **kargs)
+          reporter.warn(grouped_offense_message, **kargs)
         end
       end
     end
