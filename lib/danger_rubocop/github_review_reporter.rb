@@ -4,7 +4,7 @@ module DangerRubocop
   class GithubReviewReporter
     def initialize(review)
       @review = review
-      @review.start
+      @review.start(use_inline_comments: true)
 
       @warning_count = 0
       @error_count   = 0
